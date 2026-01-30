@@ -3,23 +3,23 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/NM9371/FunpayMonitoring/internal/fetcher"
+	"github.com/NM9371/FunpayMonitoring/internal/parser"
 )
 
 func main() {
-	url := "https://funpay.com/"
+	url := "https://funpay.com/lots/210/"
 
 	html, err := fetcher.FetchPage(url)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = os.WriteFile("funpay.html", []byte(html), 0644)
+	minPrice, err := parser.MinPriceFromHTML(html)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("FunPay page downloaded: funpay.html")
+	fmt.Printf("Минимальная цена: %.2f ₽\n", minPrice)
 }
