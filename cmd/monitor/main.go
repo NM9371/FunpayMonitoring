@@ -1,7 +1,25 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/NM9371/FunpayMonitoring/internal/fetcher"
+)
 
 func main() {
-	fmt.Println("FunPay price monitor started")
+	url := "https://funpay.com/"
+
+	html, err := fetcher.FetchPage(url)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = os.WriteFile("funpay.html", []byte(html), 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("FunPay page downloaded: funpay.html")
 }
