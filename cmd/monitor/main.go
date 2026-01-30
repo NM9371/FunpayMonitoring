@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 
@@ -9,17 +10,37 @@ import (
 )
 
 func main() {
-	url := "https://funpay.com/lots/210/"
+	url := flag.String(
+		"url",
+		"",
+		"FunPay lots page URL (e.g. https://funpay.com/lots/210/)",
+	)
 
-	html, err := fetcher.FetchPage(url)
+	query := flag.String(
+		"query",
+		"",
+		"Search text (part of item name)",
+	)
+
+	flag.Parse()
+
+	if *url == "" || *query == "" {
+		log.Fatal("usage: -url <funpay url> -query <search text>")
+	}
+
+	html, err := fetcher.FetchPage(*url)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	minPrice, err := parser.MinPriceFromHTML(html)
+	minPrice, err := parser.MinPriceByName(html, *query)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Минимальная цена: %.2f ₽\n", minPrice)
+	fmt.Printf(
+		"Минимальная цена для \"%s\": %.2f ₽\n",
+		*query,
+		minPrice,
+	)
 }
