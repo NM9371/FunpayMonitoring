@@ -16,17 +16,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Таблица истории цен лотов
-CREATE TABLE IF NOT EXISTS price_history (
-    id SERIAL PRIMARY KEY,
-    category TEXT NOT NULL,
-    lot_name TEXT NOT NULL,
-    price NUMERIC(12,2) NOT NULL,
-    checked_at TIMESTAMP DEFAULT NOW()
-);
-
 -- Индексы для ускорения поиска
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
-CREATE INDEX IF NOT EXISTS idx_price_history_lot_name ON price_history(lot_name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_unique
     ON subscriptions(user_id, category, lot_name);

@@ -101,11 +101,3 @@ func (p *Postgres) DeleteSubscription(userID int64, lotName string) error {
 	)
 	return err
 }
-
-func (p *Postgres) InsertPriceHistory(lot Lot) error {
-	_, err := p.db.Exec(
-		`INSERT INTO price_history (category, lot_name, price) VALUES ($1, $2, $3)`,
-		lot.Category, lot.Name, lot.Price,
-	)
-	return err
-}

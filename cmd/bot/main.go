@@ -67,7 +67,7 @@ func main() {
 				state.Category = ""
 				state.LotName = ""
 				state.MinPrice = 0
-				bot.SendMessage(chatID, "Введите категорию (например 210):")
+				bot.SendMessage(chatID, "Введите категорию из адресной строки:")
 				continue
 			case "list":
 				subs, err := pg.GetSubscriptions()
@@ -145,13 +145,30 @@ func main() {
 
 		default:
 			// Показываем главные кнопки
-			buttons := []tgbotapi.InlineKeyboardButton{
-				tgbotapi.NewInlineKeyboardButtonData("➕ Добавить подписку", "add"),
-				tgbotapi.NewInlineKeyboardButtonData("📄 Просмотреть подписки", "list"),
-				tgbotapi.NewInlineKeyboardButtonData("❌ Удалить подписку", "remove"),
-			}
-			kb := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(buttons...))
-			bot.SendMessage(chatID, "Выберите действие:", kb)
+			keyboard := tgbotapi.NewInlineKeyboardMarkup(
+				// Широкая кнопка
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("📄 Активные подписки", "list"),
+				),
+				// Две кнопки в ряд
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("➕ Добавить", "add"),
+					tgbotapi.NewInlineKeyboardButtonData("❌ Удалить", "remove"),
+				),
+			)
+			welcomeMessage := `Я отслеживаю цены на FunPay и отправляю уведомление,
+		когда появляется самый дешёвый лот по вашим условиям.
+		
+		🔎 Как работает подписка:
+		• Вы указываете категорию (например: Dota 2 > Предметы > 210 (в адресной строке).
+		• Вводите текст для поиска в названии лота, аналогично как вы бы искали его на сайте.
+		• Задаёте минимальную цену, лоты с меньшей ценой будут отправлены уведомлением.
+		
+		💡 Когда подходящий лот найден — я сразу присылаю название лота и ссылку.
+		❌ Подписка автоматически удаляется после уведомления.
+		`
+			bot.SendMessage(chatID, welcomeMessage, keyboard)
+
 		}
 	}
 }

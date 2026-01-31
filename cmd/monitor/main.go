@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -35,25 +36,42 @@ func main() {
 		}
 
 		for _, sub := range subs {
-			url := fmt.Sprintf("https://funpay.com/lots/%s/", sub.Category)
-			log.Println(url)
-			lots, err := getLots(url, sub.LotName)
-			log.Println("hello")
+
+			lots, err := getLots(sub.Category, sub.LotName)
 			if err != nil {
-				log.Println(err)
+				log.Println("Parsing error:", err)
 				continue
 			}
-			log.Printf("Found lot: '%s' price: %.2f", lots[0].Name, lots[0].Price)
-			for _, lot := range lots {
-				log.Printf("Found lot: '%s' price: %.2f", lot.Name, lot.Price)
-				if lot.Price <= sub.MinPrice {
-					msg := fmt.Sprintf(
-						"💰 %s — %.2f\n%s",
-						lot.Name, lot.Price, lot.URL,
-					)
-					tg.SendMessage(sub.UserID, msg)
+
+			lot := cheapestLot(lots)
+			if lot == nil {
+				continue
+			}
+
+			log.Printf(
+				"User %d | %s | price %.2f / min %.2f",
+				sub.UserID,
+				lot.Name,
+				lot.Price,
+				sub.MinPrice,
+			)
+
+			if lot.Price <= sub.MinPrice {
+
+				msg := fmt.Sprintf(
+					"💰 Найден лот!\n\n%s\nЦена: %.2f\n%s",
+					lot.Name,
+					lot.Price,
+					lot.URL,
+				)
+
+				tg.SendMessage(sub.UserID, msg)
+
+				if err := pg.DeleteSubscription(sub.UserID, sub.LotName); err != nil {
+					log.Println("Failed to delete subscription:", err)
+				} else {
+					log.Println("Subscription removed after notification")
 				}
-				pg.InsertPriceHistory(lot)
 			}
 		}
 
@@ -61,8 +79,24 @@ func main() {
 	}
 }
 
-func getLots(url, query string) ([]db.Lot, error) {
+func cheapestLot(lots []db.Lot) *db.Lot {
+	if len(lots) == 0 {
+		return nil
+	}
+
+	min := lots[0]
+	for _, lot := range lots[1:] {
+		if lot.Price < min.Price {
+			min = lot
+		}
+	}
+	return &min
+}
+
+func getLots(category, query string) ([]db.Lot, error) {
+	url := fmt.Sprintf("https://funpay.com/lots/%s/", category)
 	resp, err := http.Get(url)
+
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +115,7 @@ func getLots(url, query string) ([]db.Lot, error) {
 	var lots []db.Lot
 
 	// Ищем все лоты с нужными классами
-	doc.Find(".tc-item.offer-promo, .tc-item.lazyload-hidden.hidden").Each(func(i int, s *goquery.Selection) {
+	doc.Find(".tc-item").Each(func(i int, s *goquery.Selection) {
 		name := strings.TrimSpace(s.Find(".tc-desc-text").Text())
 		if name == "" {
 			return
@@ -107,11 +141,14 @@ func getLots(url, query string) ([]db.Lot, error) {
 		if !ok || href == "" {
 			return
 		}
+		if strings.HasPrefix(href, "/") {
+			href = "https://funpay.com" + href
+		}
 
 		lots = append(lots, db.Lot{
 			Name:     name,
 			Price:    price,
-			URL:      href, // делаем полный URL
+			URL:      href,
 			Category: url,
 		})
 	})
@@ -119,6 +156,11 @@ func getLots(url, query string) ([]db.Lot, error) {
 	if len(lots) == 0 {
 		return nil, fmt.Errorf("parsing error: no matching lots found")
 	}
+
+	// ВАЖНО: делаем самый дешёвый лот первым (чтобы lots[0] == min price)
+	sort.Slice(lots, func(i, j int) bool {
+		return lots[i].Price < lots[j].Price
+	})
 
 	return lots, nil
 }
