@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/NM9371/FunpayMonitoring/internal/db"
 	"github.com/NM9371/FunpayMonitoring/internal/telegram"
 	"github.com/PuerkitoBio/goquery"
-	"net/http"
 )
 
 func main() {
@@ -27,42 +27,40 @@ func main() {
 
 	for {
 		subs, err := pg.GetSubscriptions()
+		log.Printf("Fetched %d subscriptions from DB", len(subs))
 		if err != nil {
-			log.Println("Failed to get subscriptions:", err)
+			log.Println(err)
 			time.Sleep(30 * time.Second)
 			continue
 		}
 
 		for _, sub := range subs {
-			lots, err := getLots(sub.URL, sub.LotName)
+			url := fmt.Sprintf("https://funpay.com/lots/%s/", sub.Category)
+			log.Println(url)
+			lots, err := getLots(url, sub.LotName)
+			log.Println("hello")
 			if err != nil {
-				log.Println("Failed to fetch lots:", err)
+				log.Println(err)
 				continue
 			}
-
+			log.Printf("Found lot: '%s' price: %.2f", lots[0].Name, lots[0].Price)
 			for _, lot := range lots {
-				// Если цена ниже минимальной, отправляем уведомление
+				log.Printf("Found lot: '%s' price: %.2f", lot.Name, lot.Price)
 				if lot.Price <= sub.MinPrice {
 					msg := fmt.Sprintf(
-						"💰 Найден лот '%s' по цене %.2f (минимальная: %.2f)\n%s",
-						lot.Name, lot.Price, sub.MinPrice, lot.URL,
+						"💰 %s — %.2f\n%s",
+						lot.Name, lot.Price, lot.Category,
 					)
 					tg.SendMessage(sub.UserID, msg)
 				}
-
-				// Сохраняем цену в историю
-				if err := pg.InsertPriceHistory(lot); err != nil {
-					log.Println("Failed to insert price:", err)
-				}
+				pg.InsertPriceHistory(lot)
 			}
 		}
 
-		// Проверяем каждые 60 секунд
 		time.Sleep(60 * time.Second)
 	}
 }
 
-// getLots парсит страницу и возвращает список лотов, подходящих под LotName
 func getLots(url, query string) ([]db.Lot, error) {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -79,28 +77,50 @@ func getLots(url, query string) ([]db.Lot, error) {
 		return nil, err
 	}
 
+	query = strings.ToLower(query)
 	var lots []db.Lot
-	doc.Find(".tc-list__item").Each(func(i int, s *goquery.Selection) {
-		name := s.Find(".tc-desc-text").Text()
-		priceStr := s.Find(".tc-price__value").Text()
 
-		if strings.Contains(strings.ToLower(name), strings.ToLower(query)) {
-			price := parsePrice(priceStr)
-			lots = append(lots, db.Lot{
-				Name:  name,
-				Price: price,
-				URL:   url,
-			})
+	// Ищем все лоты с нужными классами
+	doc.Find(".tc-item.offer-promo, .tc-item.lazyload-hidden.hidden").Each(func(i int, s *goquery.Selection) {
+		name := strings.TrimSpace(s.Find(".tc-desc .tc-desc-text").Text())
+		if name == "" {
+			return
 		}
+
+		// Если передан query, фильтруем по имени
+		if query != "" && !strings.Contains(strings.ToLower(name), query) {
+			return
+		}
+
+		// Получаем цену из атрибута data-s
+		priceStr, exists := s.Find(".tc-price").Attr("data-s")
+		if !exists {
+			return
+		}
+
+		price := parsePrice(priceStr)
+		if price <= 0 {
+			return
+		}
+
+		lots = append(lots, db.Lot{
+			Name:     name,
+			Price:    price,
+			Category: url, // можно заменить на отдельное поле CategoryID, если нужно
+		})
 	})
+
+	if len(lots) == 0 {
+		return nil, fmt.Errorf("parsing error: no matching lots found")
+	}
 
 	return lots, nil
 }
 
-// parsePrice конвертирует строку с ценой в float64
+// parsePrice конвертирует строку в float64
 func parsePrice(s string) float64 {
-	s = strings.ReplaceAll(s, "₽", "")
 	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, ",", ".")
 	var price float64
 	fmt.Sscanf(s, "%f", &price)
 	return price

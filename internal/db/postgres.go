@@ -15,16 +15,17 @@ type Postgres struct {
 }
 
 type Lot struct {
-	Name  string
-	Price float64
-	URL   string
+	Name     string
+	Price    float64
+	Category string
 }
 
 type Subscription struct {
+	ID       int
 	UserID   int64
 	LotName  string
 	MinPrice float64
-	URL      string
+	Category string
 }
 
 func NewPostgres() (*Postgres, error) {
@@ -36,10 +37,15 @@ func NewPostgres() (*Postgres, error) {
 		host = "postgres"
 	}
 
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=disable", host, user, password, dbName)
+	dsn := fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s sslmode=disable",
+		host, user, password, dbName,
+	)
+
 	var db *sql.DB
 	var err error
-	for i := 0; i < 10; i++ { // 10 попыток
+
+	for i := 0; i < 10; i++ {
 		db, err = sql.Open("postgres", dsn)
 		if err == nil && db.Ping() == nil {
 			break
@@ -47,16 +53,20 @@ func NewPostgres() (*Postgres, error) {
 		log.Println("Waiting for Postgres to be ready...")
 		time.Sleep(2 * time.Second)
 	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	log.Println("✅ Connected to PostgreSQL")
 	return &Postgres{db: db}, nil
 }
 
-// Получение всех подписок
 func (p *Postgres) GetSubscriptions() ([]Subscription, error) {
-	rows, err := p.db.Query("SELECT user_id, lot_name, min_price, url FROM subscriptions")
+	rows, err := p.db.Query(`
+		SELECT id, user_id, lot_name, min_price, category
+		FROM subscriptions
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +75,7 @@ func (p *Postgres) GetSubscriptions() ([]Subscription, error) {
 	var subs []Subscription
 	for rows.Next() {
 		var s Subscription
-		if err := rows.Scan(&s.UserID, &s.LotName, &s.MinPrice, &s.URL); err != nil {
+		if err := rows.Scan(&s.ID, &s.UserID, &s.LotName, &s.MinPrice, &s.Category); err != nil {
 			return nil, err
 		}
 		subs = append(subs, s)
@@ -73,23 +83,28 @@ func (p *Postgres) GetSubscriptions() ([]Subscription, error) {
 	return subs, nil
 }
 
-// Вставка новой подписки
 func (p *Postgres) InsertSubscription(sub Subscription) error {
 	query := `
-	INSERT INTO subscriptions (user_id, lot_name, min_price, url)
-	VALUES ($1, $2, $3, $4)
-	ON CONFLICT (user_id, lot_name, url) DO NOTHING
+		INSERT INTO subscriptions (user_id, lot_name, min_price, category)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, lot_name, category) DO NOTHING
 	`
-	_, err := p.db.Exec(query, sub.UserID, sub.LotName, sub.MinPrice, sub.URL)
+	_, err := p.db.Exec(query, sub.UserID, sub.LotName, sub.MinPrice, sub.Category)
 	return err
 }
 
-// Вставка истории цены
+func (p *Postgres) DeleteSubscription(userID int64, lotName string) error {
+	_, err := p.db.Exec(
+		`DELETE FROM subscriptions WHERE user_id = $1 AND lot_name = $2`,
+		userID, lotName,
+	)
+	return err
+}
+
 func (p *Postgres) InsertPriceHistory(lot Lot) error {
-	query := `
-	INSERT INTO price_history (name, price, url)
-	VALUES ($1, $2, $3)
-	`
-	_, err := p.db.Exec(query, lot.Name, lot.Price, lot.URL)
+	_, err := p.db.Exec(
+		`INSERT INTO price_history (category, lot_name, price) VALUES ($1, $2, $3)`,
+		lot.Category, lot.Name, lot.Price,
+	)
 	return err
 }

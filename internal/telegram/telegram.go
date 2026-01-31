@@ -11,7 +11,6 @@ type Bot struct {
 	API *tgbotapi.BotAPI
 }
 
-// NewBot создаёт и возвращает Telegram Bot
 func NewBot() (*Bot, error) {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
@@ -23,21 +22,21 @@ func NewBot() (*Bot, error) {
 		return nil, err
 	}
 
-	log.Printf("✅ Telegram bot authorized on account %s", botAPI.Self.UserName)
-
+	log.Printf("✅ Telegram bot authorized as %s", botAPI.Self.UserName)
 	return &Bot{API: botAPI}, nil
 }
 
-// SendMessage отправляет сообщение пользователю
-func (b *Bot) SendMessage(chatID int64, text string) {
+func (b *Bot) SendMessage(chatID int64, text string, keyboard ...tgbotapi.InlineKeyboardMarkup) {
 	msg := tgbotapi.NewMessage(chatID, text)
+	if len(keyboard) > 0 {
+		msg.ReplyMarkup = keyboard[0]
+	}
 	_, err := b.API.Send(msg)
 	if err != nil {
 		log.Println("Failed to send Telegram message:", err)
 	}
 }
 
-// Ошибка, если токен не установлен
 var ErrTokenNotSet = &BotError{"TELEGRAM_BOT_TOKEN is not set"}
 
 type BotError struct{ Msg string }
