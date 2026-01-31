@@ -49,7 +49,7 @@ func main() {
 				if lot.Price <= sub.MinPrice {
 					msg := fmt.Sprintf(
 						"💰 %s — %.2f\n%s",
-						lot.Name, lot.Price, lot.Category,
+						lot.Name, lot.Price, lot.URL,
 					)
 					tg.SendMessage(sub.UserID, msg)
 				}
@@ -82,7 +82,7 @@ func getLots(url, query string) ([]db.Lot, error) {
 
 	// Ищем все лоты с нужными классами
 	doc.Find(".tc-item.offer-promo, .tc-item.lazyload-hidden.hidden").Each(func(i int, s *goquery.Selection) {
-		name := strings.TrimSpace(s.Find(".tc-desc .tc-desc-text").Text())
+		name := strings.TrimSpace(s.Find(".tc-desc-text").Text())
 		if name == "" {
 			return
 		}
@@ -97,16 +97,22 @@ func getLots(url, query string) ([]db.Lot, error) {
 		if !exists {
 			return
 		}
-
 		price := parsePrice(priceStr)
 		if price <= 0 {
+			return
+		}
+
+		// Берём ссылку на лот
+		href, ok := s.Attr("href")
+		if !ok || href == "" {
 			return
 		}
 
 		lots = append(lots, db.Lot{
 			Name:     name,
 			Price:    price,
-			Category: url, // можно заменить на отдельное поле CategoryID, если нужно
+			URL:      href, // делаем полный URL
+			Category: url,
 		})
 	})
 
