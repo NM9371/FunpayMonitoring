@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -35,6 +36,13 @@ func (b *Bot) SendMessage(chatID int64, text string, keyboard ...tgbotapi.Inline
 	if err != nil {
 		log.Println("Failed to send Telegram message:", err)
 	}
+}
+
+func (b *Bot) Notify(ctx context.Context, userID int64, message string) error {
+	_ = ctx
+	msg := tgbotapi.NewMessage(userID, message)
+	_, err := b.API.Send(msg)
+	return err
 }
 
 var ErrTokenNotSet = &BotError{"TELEGRAM_BOT_TOKEN is not set"}

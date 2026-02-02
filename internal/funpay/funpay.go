@@ -1,54 +1,107 @@
 package funpay
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
+	"github.com/NM9371/FunpayMonitoring/internal/domain/model"
 	"github.com/PuerkitoBio/goquery"
 )
 
-func FetchLowestPrice(url, lotName string) (float64, error) {
-	resp, err := http.Get(url)
+type Client struct {
+	httpClient *http.Client
+	baseURL    string
+}
+
+func NewClient(httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &Client{
+		httpClient: httpClient,
+		baseURL:    "https://funpay.com",
+	}
+}
+
+func (c *Client) FindLots(ctx context.Context, category string, query string) ([]model.Lot, error) {
+	url := fmt.Sprintf("%s/lots/%s/", c.baseURL, category)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("status code %d", resp.StatusCode)
+		return nil, fmt.Errorf("status code %d", resp.StatusCode)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	minPrice := 1e9
+	query = strings.ToLower(query)
+	var lots []model.Lot
 
-	doc.Find(".tc-lot-card").Each(func(i int, s *goquery.Selection) {
-		name := s.Find(".tc-desc-text").Text()
-		priceStr := s.Find(".tc-price").Text()
-
-		if !strings.Contains(strings.ToLower(name), strings.ToLower(lotName)) {
+	doc.Find(".tc-item").Each(func(i int, s *goquery.Selection) {
+		name := strings.TrimSpace(s.Find(".tc-desc-text").Text())
+		if name == "" {
 			return
 		}
 
-		priceStr = strings.ReplaceAll(priceStr, "₽", "")
-		priceStr = strings.ReplaceAll(priceStr, " ", "")
-		priceStr = strings.ReplaceAll(priceStr, ",", ".")
-
-		var price float64
-		fmt.Sscanf(priceStr, "%f", &price)
-
-		if price < minPrice {
-			minPrice = price
+		if query != "" && !strings.Contains(strings.ToLower(name), query) {
+			return
 		}
+
+		priceStr, exists := s.Find(".tc-price").Attr("data-s")
+		if !exists {
+			return
+		}
+		price := parsePrice(priceStr)
+		if price <= 0 {
+			return
+		}
+
+		href, ok := s.Attr("href")
+		if !ok || href == "" {
+			return
+		}
+		if strings.HasPrefix(href, "/") {
+			href = c.baseURL + href
+		}
+
+		lots = append(lots, model.Lot{
+			Name:     name,
+			Price:    price,
+			URL:      href,
+			Category: category,
+		})
 	})
 
-	if minPrice == 1e9 {
-		return 0, fmt.Errorf("no matching lots found")
+	if len(lots) == 0 {
+		return nil, fmt.Errorf("no matching lots found")
 	}
 
-	return minPrice, nil
+	sort.Slice(lots, func(i, j int) bool {
+		return lots[i].Price < lots[j].Price
+	})
+
+	return lots, nil
+}
+
+func parsePrice(s string) float64 {
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, ",", ".")
+	var price float64
+	fmt.Sscanf(s, "%f", &price)
+	return price
 }

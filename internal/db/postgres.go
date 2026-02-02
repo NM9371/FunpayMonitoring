@@ -1,32 +1,19 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
+	"github.com/NM9371/FunpayMonitoring/internal/domain/model"
 	_ "github.com/lib/pq"
 )
 
 type Postgres struct {
 	db *sql.DB
-}
-
-type Lot struct {
-	Name     string
-	Price    float64
-	Category string
-	URL      string
-}
-
-type Subscription struct {
-	ID       int
-	UserID   int64
-	LotName  string
-	MinPrice float64
-	Category string
 }
 
 func NewPostgres() (*Postgres, error) {
@@ -63,8 +50,8 @@ func NewPostgres() (*Postgres, error) {
 	return &Postgres{db: db}, nil
 }
 
-func (p *Postgres) GetSubscriptions() ([]Subscription, error) {
-	rows, err := p.db.Query(`
+func (p *Postgres) ListAll(ctx context.Context) ([]model.Subscription, error) {
+	rows, err := p.db.QueryContext(ctx, `
 		SELECT id, user_id, lot_name, min_price, category
 		FROM subscriptions
 	`)
@@ -73,9 +60,9 @@ func (p *Postgres) GetSubscriptions() ([]Subscription, error) {
 	}
 	defer rows.Close()
 
-	var subs []Subscription
+	var subs []model.Subscription
 	for rows.Next() {
-		var s Subscription
+		var s model.Subscription
 		if err := rows.Scan(&s.ID, &s.UserID, &s.LotName, &s.MinPrice, &s.Category); err != nil {
 			return nil, err
 		}
@@ -84,20 +71,43 @@ func (p *Postgres) GetSubscriptions() ([]Subscription, error) {
 	return subs, nil
 }
 
-func (p *Postgres) InsertSubscription(sub Subscription) error {
+func (p *Postgres) ListByUser(ctx context.Context, userID int64) ([]model.Subscription, error) {
+	rows, err := p.db.QueryContext(ctx, `
+		SELECT id, user_id, lot_name, min_price, category
+		FROM subscriptions
+		WHERE user_id = $1
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var subs []model.Subscription
+	for rows.Next() {
+		var s model.Subscription
+		if err := rows.Scan(&s.ID, &s.UserID, &s.LotName, &s.MinPrice, &s.Category); err != nil {
+			return nil, err
+		}
+		subs = append(subs, s)
+	}
+	return subs, nil
+}
+
+func (p *Postgres) Add(ctx context.Context, sub model.Subscription) error {
 	query := `
 		INSERT INTO subscriptions (user_id, lot_name, min_price, category)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (user_id, lot_name, category) DO NOTHING
 	`
-	_, err := p.db.Exec(query, sub.UserID, sub.LotName, sub.MinPrice, sub.Category)
+	_, err := p.db.ExecContext(ctx, query, sub.UserID, sub.LotName, sub.MinPrice, sub.Category)
 	return err
 }
 
-func (p *Postgres) DeleteSubscription(userID int64, lotName string) error {
-	_, err := p.db.Exec(
-		`DELETE FROM subscriptions WHERE user_id = $1 AND lot_name = $2`,
-		userID, lotName,
+func (p *Postgres) Remove(ctx context.Context, userID int64, category string, lotName string) error {
+	_, err := p.db.ExecContext(
+		ctx,
+		`DELETE FROM subscriptions WHERE user_id = $1 AND category = $2 AND lot_name = $3`,
+		userID, category, lotName,
 	)
 	return err
 }
